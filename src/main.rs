@@ -1,31 +1,38 @@
 use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode};
+use terrain_plane::TerrainPlanePlugin;
+
+use crate::terrain_plane::TerrainPlane;
+
+mod terrain_plane;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins((DefaultPlugins, TerrainPlanePlugin::default()))
         .add_systems(Startup, startup)
         .add_systems(Update, (update_move, update_look, exit_game))
         .run();
 }
 
-fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, mut meshes: ResMut<Assets<Mesh>>, mut window: Query<&mut Window>) {
+fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, meshes: ResMut<Assets<Mesh>>, mut window: Query<&mut Window>) {
     println!("Hello, world!");
 
     let mut window = window.single_mut();
     window.cursor.grab_mode = CursorGrabMode::Locked;
     window.cursor.visible = false;
 
-    let mat = materials.add(StandardMaterial {
+    let material = materials.add(StandardMaterial {
         base_color: Color::CYAN,
         ..default()
     });
-    let msh = meshes.add(shape::Plane::from_size(10.).into());
 
-    commands.spawn(MaterialMeshBundle {
-        mesh: msh,
-        material: mat,
+    let plane = TerrainPlane::new(meshes);
+    let mesh = plane.mesh.clone();
+
+    commands.spawn((plane, MaterialMeshBundle {
+        mesh,
+        material,
         ..default()
-    });
+    }));
 
     commands.spawn(PointLightBundle {
         point_light: PointLight {
@@ -39,7 +46,7 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
     });
 
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0., 6., 12.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
+        transform: Transform::from_xyz(0., 6., 0.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
         ..default()
     });
 }
