@@ -1,13 +1,15 @@
 use std::f32::consts::{PI, E};
 
 use bevy::{prelude::*, render::{render_resource::{PrimitiveTopology, ShaderRef, AsBindGroup}, mesh::Indices}, reflect::TypeUuid};
-use bevy_inspector_egui::{quick::AssetInspectorPlugin, InspectorOptions};
+use bevy_inspector_egui::{quick::AssetInspectorPlugin, InspectorOptions, prelude::ReflectInspectorOptions};
 
 #[derive(Default)]
 pub struct TerrainPlanePlugin {}
 
 impl Plugin for TerrainPlanePlugin {
     fn build(&self, app: &mut App) {
+        app.register_type::<TerrainPlaneMaterial>();
+        app.add_asset::<TerrainPlaneMaterial>();
         app.add_plugins(MaterialPlugin::<TerrainPlaneMaterial>::default());
         app.add_plugins(AssetInspectorPlugin::<TerrainPlaneMaterial>::default());
     }
@@ -124,7 +126,8 @@ impl TerrainPlane {
     }
 }
 
-#[derive(TypeUuid, Clone, AsBindGroup, Reflect, InspectorOptions, Debug)]
+#[derive(TypeUuid, Clone, AsBindGroup, Reflect, InspectorOptions, Resource, Default, Debug)]
+#[reflect(InspectorOptions, Resource)]
 #[uuid="c2ad0a24-0ccd-498e-9162-8d5854e51d8a"]
 pub struct TerrainPlaneMaterial {
     #[uniform(0)]

@@ -13,7 +13,6 @@ fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgba(0.7, 0.7, 1.0, 1.0)))
         .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), TerrainPlanePlugin::default(), FramepacePlugin {}))
-        .add_asset::<TerrainPlaneMaterial>()
         .add_systems(Startup, startup)
         .add_systems(Update, (update_move, update_look, exit_game, use_mouse))
         .run();
