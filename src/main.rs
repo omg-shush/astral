@@ -1,8 +1,9 @@
 use std::f32::consts::PI;
+use bevy_framepace::{Limiter, FramepaceSettings, FramepacePlugin};
 use rand::random;
 
-use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode};
-use bevy_framepace::{FramepacePlugin, FramepaceSettings, Limiter};
+use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode, log::{LogPlugin, Level}};
+use terrain_plane::TerrainPlaneMaterial;
 
 use crate::terrain_plane::{TerrainPlane, TerrainPlanePlugin};
 
@@ -11,13 +12,14 @@ mod terrain_plane;
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgba(0.7, 0.7, 1.0, 1.0)))
-        .add_plugins((DefaultPlugins, TerrainPlanePlugin::default(), FramepacePlugin))
+        .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), TerrainPlanePlugin::default(), FramepacePlugin {}))
+        .add_asset::<TerrainPlaneMaterial>()
         .add_systems(Startup, startup)
-        .add_systems(Update, (update_move, update_look, exit_game))
+        .add_systems(Update, (update_move, update_look, exit_game, use_mouse))
         .run();
 }
 
-fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, mut meshes: ResMut<Assets<Mesh>>, mut window: Query<&mut Window>, mut frames: ResMut<FramepaceSettings>) {
+fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, mut terrain_materials: ResMut<Assets<TerrainPlaneMaterial>>, mut meshes: ResMut<Assets<Mesh>>, mut window: Query<&mut Window>, mut frames: ResMut<FramepaceSettings>) {
     println!("Hello, world!");
 
     let mut window = window.single_mut();
@@ -27,11 +29,6 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
     frames.limiter = Limiter::from_framerate(60.);
 
     // Terrain
-    let material_terrain = materials.add(StandardMaterial {
-        base_color: Color::WHITE,
-        reflectance: 0.1,
-        ..default()
-    });
     let perlin_1 = perlin(100);
     let perlin_2 = perlin(100);
     let perlin_3 = perlin(100);
@@ -44,43 +41,12 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
             perlin_4(x / 197., y / 197.) * 64.
         ].iter().sum()
     };
-    let terrain = TerrainPlane::new(&mut meshes, terrain_heightmap);
+    let terrain = TerrainPlane::new(&mut meshes, &mut terrain_materials, terrain_heightmap);
     let terrain_handle = terrain.mesh.clone();
+    let terrain_material_handle = terrain.material.clone();
     commands.spawn((terrain, MaterialMeshBundle {
         mesh: terrain_handle,
-        material: material_terrain,
-        ..default()
-    }));
-
-    // Rocks
-    let material_rocks = materials.add(StandardMaterial {
-        base_color: Color::DARK_GRAY,
-        reflectance: 0.001,
-        ..default()
-    });
-    let perlin_1 = perlin(100);
-    let perlin_2 = perlin(100);
-    let perlin_3 = perlin(100);
-    let perlin_4 = perlin(100);
-    let rocks_heightmap = |x: f32, y: f32| {
-        let t = terrain_heightmap(x, y);
-        if t < 8. || t > 26. {
-            return -32.;
-        }
-        [
-            t,
-            perlin_1(x / 3., y / 3.) * 1.,
-            perlin_2(x / 13., y / 13.) * 2.,
-            perlin_3(x / 23., y / 23.) * 4.,
-            perlin_4(x / 197., y / 197.) * 0.5,
-            -2.
-        ].iter().sum()
-    };
-    let rocks = TerrainPlane::new(&mut meshes, rocks_heightmap);
-    let rocks_handle = rocks.mesh.clone();
-    commands.spawn((rocks, MaterialMeshBundle {
-        mesh: rocks_handle,
-        material: material_rocks,
+        material: terrain_material_handle.clone(),
         ..default()
     }));
 
@@ -99,10 +65,10 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
             perlin_2(x / 7., y / 7.) * 0.8,
         ].iter().sum()
     };
-    let water = TerrainPlane::new(&mut meshes, heightmap);
-    let water2 = TerrainPlane::new(&mut meshes, |x, y| heightmap(x + 34., y - 12.));
-    let water3 = TerrainPlane::new(&mut meshes, |x, y| heightmap(x + 11., y + 64.));
-    let water4 = TerrainPlane::new(&mut meshes, |x, y| heightmap(x - 22., y - 36.));
+    let water = TerrainPlane::new(&mut meshes, &mut terrain_materials, heightmap);
+    let water2 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x + 34., y - 12.));
+    let water3 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x + 11., y + 64.));
+    let water4 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x - 22., y - 36.));
     commands.spawn(MaterialMeshBundle {
         mesh: water.mesh.clone(),
         material: material_water.clone(),
@@ -140,7 +106,7 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
     });
 
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0., 64., 12.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
+        transform: Transform::from_xyz(0., 64., 512.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
         ..default()
     });
 }
@@ -164,7 +130,12 @@ fn update_move(mut camera: Query<&mut Transform, With<Camera>>, keys: Res<Input<
     }
 }
 
-fn update_look(mut camera: Query<&mut Transform, With<Camera>>, mut mouse: EventReader<MouseMotion>, time: Res<Time>) {
+fn update_look(mut camera: Query<&mut Transform, With<Camera>>, mut mouse: EventReader<MouseMotion>, time: Res<Time>, window: Query<&Window>) {
+    let window = window.single();
+    if window.cursor.visible {
+        return; // disable look while cursor is released
+    }
+
     let mut camera = camera.single_mut();
     let (mut delta_x, mut delta_y) = (0., 0.);
     let (up, right) = (camera.up(), camera.right());
@@ -176,9 +147,23 @@ fn update_look(mut camera: Query<&mut Transform, With<Camera>>, mut mouse: Event
     camera.rotate_axis(right, delta_y * -0.05 * time.delta_seconds());
 }
 
-fn exit_game(keys: Res<Input<KeyCode>>, mut exit: EventWriter<AppExit>) {
+fn exit_game(keys: Res<Input<KeyCode>>, mut exit: EventWriter<AppExit>, assets: Res<Assets<TerrainPlaneMaterial>>) {
     if keys.pressed(KeyCode::Escape) {
+        assets.iter().for_each(|(_, mat)| println!("{:#?}", mat));
         exit.send(AppExit::default());
+    }
+}
+
+fn use_mouse(keys: Res<Input<KeyCode>>, mut window: Query<&mut Window>) {
+    if keys.just_pressed(KeyCode::ControlLeft) {
+        let mut window = window.single_mut();
+        if window.cursor.visible {
+            window.cursor.grab_mode = CursorGrabMode::Locked;
+            window.cursor.visible = false;
+        } else {
+            window.cursor.grab_mode = CursorGrabMode::None;
+            window.cursor.visible = true;
+        }
     }
 }
 
