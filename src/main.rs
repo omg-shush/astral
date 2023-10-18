@@ -3,22 +3,34 @@ use bevy_framepace::{Limiter, FramepaceSettings, FramepacePlugin};
 use rand::random;
 
 use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode, log::{LogPlugin, Level}};
+use sky_plane::{SkyPlaneMaterial, SkyPlanePlugin};
 use terrain_plane::TerrainPlaneMaterial;
 
-use crate::terrain_plane::{TerrainPlane, TerrainPlanePlugin};
+use crate::{terrain_plane::{TerrainPlane, TerrainPlanePlugin}, sky_plane::SkyPlane};
 
 mod terrain_plane;
+mod sky_plane;
 
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgba(0.7, 0.7, 1.0, 1.0)))
-        .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), TerrainPlanePlugin::default(), FramepacePlugin {}))
+        .insert_resource(ClearColor(Color::rgb(0.94, 0.97, 1.0) * 0.8))
+        .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), FramepacePlugin {}))
+        .add_plugins((TerrainPlanePlugin::default(), SkyPlanePlugin::default()))
         .add_systems(Startup, startup)
         .add_systems(Update, (update_move, update_look, exit_game, use_mouse))
         .run();
 }
 
-fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial>>, mut terrain_materials: ResMut<Assets<TerrainPlaneMaterial>>, mut meshes: ResMut<Assets<Mesh>>, mut window: Query<&mut Window>, mut frames: ResMut<FramepaceSettings>) {
+fn startup(
+    mut commands: Commands,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut terrain_materials: ResMut<Assets<TerrainPlaneMaterial>>,
+    mut sky_materials: ResMut<Assets<SkyPlaneMaterial>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut images: ResMut<Assets<Image>>,
+    mut window: Query<&mut Window>,
+    mut frames: ResMut<FramepaceSettings>
+) {
     println!("Hello, world!");
 
     let mut window = window.single_mut();
@@ -28,10 +40,10 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
     frames.limiter = Limiter::from_framerate(60.);
 
     // Terrain
-    let perlin_1 = perlin(100);
-    let perlin_2 = perlin(100);
-    let perlin_3 = perlin(100);
-    let perlin_4 = perlin(100);
+    let perlin_1 = perlin_2d(100);
+    let perlin_2 = perlin_2d(100);
+    let perlin_3 = perlin_2d(100);
+    let perlin_4 = perlin_2d(100);
     let terrain_heightmap = |x: f32, y: f32| {
         [
             perlin_1(x / 3., y / 3.),
@@ -40,12 +52,23 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
             perlin_4(x / 197., y / 197.) * 64.
         ].iter().sum()
     };
-    let terrain = TerrainPlane::new(&mut meshes, &mut terrain_materials, terrain_heightmap);
+    let terrain = TerrainPlane::new(&mut meshes, &mut terrain_materials, &mut images, terrain_heightmap);
     let terrain_handle = terrain.mesh.clone();
     let terrain_material_handle = terrain.material.clone();
     commands.spawn((terrain, MaterialMeshBundle {
         mesh: terrain_handle,
         material: terrain_material_handle.clone(),
+        ..default()
+    }));
+
+    // Sky
+    let sky = SkyPlane::new(&mut meshes, &mut sky_materials, &mut images);
+    let sky_handle = sky.mesh.clone();
+    let sky_material_handle = sky.material.clone();
+    commands.spawn((sky, MaterialMeshBundle {
+        mesh: sky_handle.clone(),
+        material: sky_material_handle.clone(),
+        transform: Transform::from_rotation(Quat::from_axis_angle(Vec3::X, PI)).with_translation(Vec3::Y * 512.),
         ..default()
     }));
 
@@ -56,18 +79,18 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
         alpha_mode: AlphaMode::Blend,
         ..default()
     });
-    let perlin_1 = perlin(100);
-    let perlin_2 = perlin(100);
+    let perlin_1 = perlin_2d(100);
+    let perlin_2 = perlin_2d(100);
     let heightmap = |x: f32, y: f32| {
         [
             perlin_1(x / 1.5, y / 1.5) * 0.3,
             perlin_2(x / 7., y / 7.) * 0.8,
         ].iter().sum()
     };
-    let water = TerrainPlane::new(&mut meshes, &mut terrain_materials, heightmap);
-    let water2 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x + 34., y - 12.));
-    let water3 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x + 11., y + 64.));
-    let water4 = TerrainPlane::new(&mut meshes, &mut terrain_materials, |x, y| heightmap(x - 22., y - 36.));
+    let water = TerrainPlane::new(&mut meshes, &mut terrain_materials, &mut images, heightmap);
+    let water2 = TerrainPlane::new(&mut meshes, &mut terrain_materials, &mut images, |x, y| heightmap(x + 34., y - 12.));
+    let water3 = TerrainPlane::new(&mut meshes, &mut terrain_materials, &mut images, |x, y| heightmap(x + 11., y + 64.));
+    let water4 = TerrainPlane::new(&mut meshes, &mut terrain_materials, &mut images, |x, y| heightmap(x - 22., y - 36.));
     commands.spawn(MaterialMeshBundle {
         mesh: water.mesh.clone(),
         material: material_water.clone(),
@@ -105,7 +128,7 @@ fn startup(mut commands: Commands, mut materials: ResMut<Assets<StandardMaterial
     });
 
     commands.spawn(Camera3dBundle {
-        transform: Transform::from_xyz(0., 64., 512.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
+        transform: Transform::from_xyz(1024., 1024., 1024.).looking_at(Vec3::new(0., 0., 0.), Vec3::Y),
         ..default()
     });
 }
@@ -146,9 +169,10 @@ fn update_look(mut camera: Query<&mut Transform, With<Camera>>, mut mouse: Event
     camera.rotate_axis(right, delta_y * -0.05 * time.delta_seconds());
 }
 
-fn exit_game(keys: Res<Input<KeyCode>>, mut exit: EventWriter<AppExit>, assets: Res<Assets<TerrainPlaneMaterial>>) {
+fn exit_game(keys: Res<Input<KeyCode>>, mut exit: EventWriter<AppExit>, assets: Res<Assets<TerrainPlaneMaterial>>, assets2: Res<Assets<SkyPlaneMaterial>>) {
     if keys.pressed(KeyCode::Escape) {
         assets.iter().for_each(|(_, mat)| println!("{:#?}", mat));
+        assets2.iter().for_each(|(_, mat)| println!("{:#?}", mat));
         exit.send(AppExit::default());
     }
 }
@@ -166,7 +190,7 @@ fn use_mouse(keys: Res<Input<KeyCode>>, mut window: Query<&mut Window>) {
     }
 }
 
-fn perlin(size: usize) -> impl Fn(f32, f32) -> f32 {
+fn perlin_2d(size: usize) -> impl Fn(f32, f32) -> f32 {
     let mut map = vec![vec![Vec2::ZERO; size]; size];
     for xi in 0..size {
         for yi in 0..size {
@@ -190,5 +214,48 @@ fn perlin(size: usize) -> impl Fn(f32, f32) -> f32 {
         let interp_x = |(d1, p1): (f32, Vec2), (d2, _)| (interp(d1, d2, p1.x), Vec2::new(0., p1.y));
         let interp_y = |(d1, p1): (f32, Vec2), (d2, _)| interp(d1, d2, p1.y);
         interp_y(interp_x(dot_offsets[0b00], dot_offsets[0b10]), interp_x(dot_offsets[0b01], dot_offsets[0b11]))
+    }
+}
+
+fn perlin_3d(size: usize) -> impl Fn(f32, f32, f32) -> f32 {
+    let mut map = vec![vec![vec![Vec3::ZERO; size]; size]; size];
+    for xi in 0..size {
+        for yi in 0..size {
+            for zi in 0..size {
+                let (dx, dy, dz) = random();
+                map[xi][yi][zi] = Vec3::new(dx, dy, dz).normalize();
+            }
+        }
+    }
+    move |x, y, z| {
+        let (xi, yi, zi) = (x.rem_euclid(size as f32), y.rem_euclid(size as f32), z.rem_euclid(size as f32));
+        let (xi_f, yi_f, zi_f) = (xi.floor(), yi.floor(), zi.floor());
+        let mut points = Vec::new();
+        for dx in 0..=1 {
+            for dy in 0..=1 {
+                for dz in 0..=1 {
+                    points.push(Vec3::new(xi_f + dx as f32, yi_f + dy as f32, zi_f + dz as f32));
+                }
+            }
+        }
+        // modulo size again in case floating point error
+        let gradients = points.iter().map(|p| map[p.x as usize % size][p.y as usize % size][p.z as usize % size]);
+        let offsets = points.iter().map(|p| Vec3::new(xi, yi, zi) - *p);
+        let dot_offsets = gradients.zip(offsets).map(|(g, o)| (g.dot(o), o)).collect::<Vec<_>>();
+        let smoothstep = |x: f32| 6. * x.powi(5) - 15. * x.powi(4) + 10. * x.powi(3);
+        let interp = |a, b, p| a + (b - a) * smoothstep(p);
+        let interp_x = |(d1, p1): (f32, Vec3), (d2, _)| (interp(d1, d2, p1.x), Vec3::new(0., p1.y, p1.z));
+        let interp_y = |(d1, p1): (f32, Vec3), (d2, _)| (interp(d1, d2, p1.y), Vec3::new(0., 0., p1.z));
+        let interp_z = |(d1, p1): (f32, Vec3), (d2, _)| interp(d1, d2, p1.z);
+        interp_z(
+            interp_y(
+                interp_x(dot_offsets[0b000], dot_offsets[0b100]),
+                interp_x(dot_offsets[0b010], dot_offsets[0b110]),
+            ),
+            interp_y(
+                interp_x(dot_offsets[0b001], dot_offsets[0b101]),
+                interp_x(dot_offsets[0b011], dot_offsets[0b111])
+            )
+        )
     }
 }

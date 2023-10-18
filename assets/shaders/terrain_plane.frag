@@ -27,12 +27,7 @@ layout(set = 1, binding = 1) uniform TerrainPlaneLighting {
     float ambient_strength;
 };
 
-// layout(set = 1, binding = 1) uniform texture2D CustomMaterial_texture;
-// layout(set = 1, binding = 2) uniform sampler CustomMaterial_sampler;
-
 void main() {
-    // o_Target = Color * texture(sampler2D(CustomMaterial_texture,CustomMaterial_sampler), v_Uv);
-
     // Coloring
     vec4 color = peak_color;
     if (fragment_position_world.y < sea_thresh) {

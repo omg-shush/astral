@@ -1,6 +1,6 @@
 use std::f32::consts::{PI, E};
 
-use bevy::{prelude::*, render::{render_resource::{PrimitiveTopology, ShaderRef, AsBindGroup}, mesh::Indices}, reflect::TypeUuid};
+use bevy::{prelude::*, render::{render_resource::{PrimitiveTopology, ShaderRef, AsBindGroup, TextureDescriptor, Extent3d, TextureDimension, TextureFormat, TextureUsages, SamplerDescriptor, AddressMode, FilterMode, TextureViewDescriptor, TextureViewDimension, TextureAspect}, mesh::Indices, texture::ImageSampler}, reflect::TypeUuid, math::Vec3Swizzles};
 use bevy_inspector_egui::{quick::AssetInspectorPlugin, InspectorOptions, prelude::ReflectInspectorOptions};
 
 #[derive(Default)]
@@ -22,7 +22,7 @@ pub struct TerrainPlane {
 }
 
 impl TerrainPlane {
-    pub fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<TerrainPlaneMaterial>, heightmap: impl Fn(f32, f32) -> f32) -> TerrainPlane {
+    pub fn new(meshes: &mut Assets<Mesh>, materials: &mut Assets<TerrainPlaneMaterial>, images: &mut Assets<Image>, heightmap: impl Fn(f32, f32) -> f32) -> TerrainPlane {
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
 
         let (width, height) = (1000u32, 1000u32);
@@ -103,6 +103,56 @@ impl TerrainPlane {
         mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
         mesh.set_indices(Some(Indices::U32(indices)));
 
+        let perlin_size = 64;
+        let mut perlin_data = vec![0; perlin_size * perlin_size * perlin_size * 4 * 4]; // 4 floats per Vec4, 4 bytes per float
+        for _ in 0..perlin_size {
+            let (dx, dy, dz) = rand::random();
+            let vec = Vec3::new(dx, dy, dz).normalize().xyzz();
+            perlin_data.append(&mut vec.to_array().iter().flat_map(|x| x.to_ne_bytes()).collect::<Vec<u8>>());
+        }
+        let image = Image {
+            data: perlin_data,
+            texture_descriptor: TextureDescriptor {
+                label: "3D Perlin Noise Texture".into(),
+                size: Extent3d {
+                    width: perlin_size as u32,
+                    height: perlin_size as u32,
+                    depth_or_array_layers: perlin_size as u32
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D3,
+                format: TextureFormat::Rgba32Float,
+                usage: TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            },
+            sampler_descriptor: ImageSampler::Descriptor(SamplerDescriptor {
+                label: "3D Perlin Noise Sampler".into(),
+                address_mode_u: AddressMode::Repeat,
+                address_mode_v: AddressMode::Repeat,
+                address_mode_w: AddressMode::Repeat,
+                mag_filter: FilterMode::Nearest,
+                min_filter: FilterMode::Nearest,
+                mipmap_filter: FilterMode::Nearest,
+                lod_min_clamp: 1.0,
+                lod_max_clamp: 1.0,
+                compare: None,
+                anisotropy_clamp: 1,
+                border_color: None
+            }),
+            texture_view_descriptor: Some(TextureViewDescriptor {
+                label: "3D Perlin Noise View".into(),
+                format: Some(TextureFormat::Rgba32Float),
+                dimension: Some(TextureViewDimension::D3),
+                aspect: TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: None,
+                base_array_layer: 0,
+                array_layer_count: None,
+            }),
+        };
+        let img_handle = images.add(image);
+
         let mat: Handle<TerrainPlaneMaterial> = materials.add(TerrainPlaneMaterial {
             peak_color: Color::WHITE,
             flat_color: Color::rgb(0.0, 1.0, 0.0),
@@ -119,7 +169,8 @@ impl TerrainPlane {
             diffuse_color: Color::rgb(0.9098039, 0.77254903, 0.3137255),
             diffuse_strength: 1.0,
             ambient_color: Color::WHITE,
-            ambient_strength: 0.1
+            ambient_strength: 0.1,
+            noise_3d: img_handle
         });
 
         TerrainPlane { mesh: meshes.add(mesh), material: mat }
@@ -170,7 +221,11 @@ pub struct TerrainPlaneMaterial {
     ambient_color: Color,
     #[uniform(1)]
     #[inspector(min = 0.0, max = 1.0)]
-    ambient_strength: f32
+    ambient_strength: f32,
+
+    #[texture(2, dimension = "3d")]
+    #[sampler(3)]
+    noise_3d: Handle<Image>
 }
 
 impl Material for TerrainPlaneMaterial {
