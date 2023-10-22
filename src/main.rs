@@ -1,5 +1,6 @@
 use std::f32::consts::PI;
 use bevy_framepace::{Limiter, FramepaceSettings, FramepacePlugin};
+use fps::FpsPlugin;
 use rand::random;
 
 use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode, log::{LogPlugin, Level}};
@@ -10,12 +11,13 @@ use crate::{terrain_plane::{TerrainPlane, TerrainPlanePlugin}, sky_plane::SkyPla
 
 mod terrain_plane;
 mod sky_plane;
+mod fps;
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.94, 0.97, 1.0) * 0.8))
         .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), FramepacePlugin {}))
-        .add_plugins((TerrainPlanePlugin::default(), SkyPlanePlugin::default()))
+        .add_plugins((TerrainPlanePlugin::default(), SkyPlanePlugin::default(), FpsPlugin::default()))
         .add_systems(Startup, startup)
         .add_systems(Update, (update_move, update_look, exit_game, use_mouse))
         .run();
