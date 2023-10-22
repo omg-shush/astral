@@ -3,7 +3,7 @@ use bevy_framepace::{Limiter, FramepaceSettings, FramepacePlugin};
 use fps::FpsPlugin;
 use rand::random;
 
-use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::CursorGrabMode, log::{LogPlugin, Level}};
+use bevy::{prelude::*, input::mouse::MouseMotion, app::AppExit, window::{CursorGrabMode, Cursor}, log::{LogPlugin, Level}};
 use sky_plane::{SkyPlaneMaterial, SkyPlanePlugin};
 use terrain_plane::TerrainPlaneMaterial;
 
@@ -14,9 +14,25 @@ mod sky_plane;
 mod fps;
 
 fn main() {
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.94, 0.97, 1.0) * 0.8))
-        .add_plugins((DefaultPlugins.set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN}), FramepacePlugin {}))
+        .add_plugins((
+            DefaultPlugins
+                .set(LogPlugin {filter: "warn,wgpu_hal=off".to_string(), level: Level::WARN})
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        cursor: Cursor { visible: false, grab_mode: CursorGrabMode::None, ..default() },
+                        canvas: Some("#canvas".to_string()),
+                        fit_canvas_to_parent: true,
+                        ..default()
+                    }),
+                    ..default()
+                }),
+            FramepacePlugin {}
+        ))
         .add_plugins((TerrainPlanePlugin::default(), SkyPlanePlugin::default(), FpsPlugin::default()))
         .add_systems(Startup, startup)
         .add_systems(Update, (update_move, update_look, exit_game, use_mouse))
@@ -30,14 +46,9 @@ fn startup(
     mut sky_materials: ResMut<Assets<SkyPlaneMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
-    mut window: Query<&mut Window>,
     mut frames: ResMut<FramepaceSettings>
 ) {
     println!("Hello, world!");
-
-    let mut window = window.single_mut();
-    window.cursor.grab_mode = CursorGrabMode::Locked;
-    window.cursor.visible = false;
 
     frames.limiter = Limiter::from_framerate(60.);
 

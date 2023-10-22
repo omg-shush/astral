@@ -230,6 +230,7 @@ dependencies = [
  "bevy",
  "bevy-inspector-egui",
  "bevy_framepace",
+ "console_error_panic_hook",
  "rand",
 ]
 
